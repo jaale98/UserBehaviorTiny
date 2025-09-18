@@ -9,8 +9,10 @@ app = Flask(__name__)
 # ---------- DB helpers ----------
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        g.db = conn
     return g.db
 
 @app.teardown_appcontext
@@ -19,8 +21,11 @@ def close_db(exc):
     if db: db.close()
 
 def init_db():
-    db = sqlite3.connect(DB_PATH)
-    cur = db.cursor()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row  
+    conn.execute("PRAGMA foreign_keys = ON")
+    cur = conn.cursor()
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS ui_elements (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,6 +33,7 @@ def init_db():
       type TEXT NOT NULL CHECK (type IN ('button','text_input')),
       label TEXT NOT NULL
     )""")
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,9 +43,12 @@ def init_db():
       created_at INTEGER NOT NULL,
       FOREIGN KEY (ui_element_id) REFERENCES ui_elements(id)
     )""")
-    # seed a few elements if table empty
+
+    # Seed a few elements if table empty
     cur.execute("SELECT COUNT(*) AS c FROM ui_elements")
-    if cur.fetchone()["c"] == 0:
+    count_row = cur.fetchone()
+    total = count_row["c"] if count_row is not None else 0
+    if total == 0:
         cur.executemany(
             "INSERT INTO ui_elements (key, type, label) VALUES (?, ?, ?)",
             [
@@ -49,8 +58,9 @@ def init_db():
                 ("txt_idea", "text_input", "Idea"),
             ],
         )
-    db.commit()
-    db.close()
+
+    conn.commit()
+    conn.close()
 
 if not Path(DB_PATH).exists():
     init_db()
